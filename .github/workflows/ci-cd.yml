@@ -241,9 +241,34 @@ jobs:
           kubectl apply -f k8s/web-app-deployment.yaml
           kubectl apply -f k8s/ingress.yaml
           
-          # Wait for rollout
-          kubectl rollout status deployment/webservice -n ev-charging --timeout=5m
-          kubectl rollout status deployment/web-app -n ev-charging --timeout=5m
+          echo "=== Checking deployment status ==="
+          kubectl get pods -n ev-charging
+          kubectl get deployments -n ev-charging
+          
+          # Wait for rollout with better error handling
+          echo "=== Waiting for webservice rollout ==="
+          if ! kubectl rollout status deployment/webservice -n ev-charging --timeout=10m; then
+            echo "ERROR: WebService deployment failed!"
+            echo "=== Pod Status ==="
+            kubectl get pods -n ev-charging -l app=webservice
+            echo "=== Pod Descriptions ==="
+            kubectl describe pods -n ev-charging -l app=webservice
+            echo "=== Pod Logs ==="
+            kubectl logs -n ev-charging -l app=webservice --tail=100 || true
+            exit 1
+          fi
+          
+          echo "=== Waiting for web-app rollout ==="
+          if ! kubectl rollout status deployment/web-app -n ev-charging --timeout=10m; then
+            echo "ERROR: Web-app deployment failed!"
+            echo "=== Pod Status ==="
+            kubectl get pods -n ev-charging -l app=web-app
+            echo "=== Pod Descriptions ==="
+            kubectl describe pods -n ev-charging -l app=web-app
+            echo "=== Pod Logs ==="
+            kubectl logs -n ev-charging -l app=web-app --tail=100 || true
+            exit 1
+          fi
           
           # Get and update ALB URL in configmap
           echo "Waiting for load balancer..."

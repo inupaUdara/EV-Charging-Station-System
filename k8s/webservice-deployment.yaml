@@ -44,6 +44,11 @@ spec:
             name: webservice-config
         - secretRef:
             name: webservice-secrets
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: aspnet-temp
+          mountPath: /app/tmp
         resources:
           requests:
             memory: "256Mi"
@@ -74,6 +79,11 @@ spec:
           capabilities:
             drop:
             - ALL
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: aspnet-temp
+        emptyDir: {}
 ---
 apiVersion: v1
 kind: Service
