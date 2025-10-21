@@ -20,6 +20,7 @@ const BookingViewModal = ({ isOpen, onClose, bookingId }) => {
         setBooking(data);
       } catch (err) {
         setError("Failed to load booking details");
+        console.error(err);
       } finally {
         setLoading(false);
       }

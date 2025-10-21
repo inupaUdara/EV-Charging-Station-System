@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import { useMemo, useState } from "react";
 import toast from "react-hot-toast";
 import Table from "../../components/table/Table";
