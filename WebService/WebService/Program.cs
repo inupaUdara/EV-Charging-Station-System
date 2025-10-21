@@ -16,7 +16,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontend", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://k8s-evchargi-evchargi-e0b4a0b41d-325761986.us-east-1.elb.amazonaws.com")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
