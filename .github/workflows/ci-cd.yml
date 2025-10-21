@@ -276,7 +276,7 @@ jobs:
           LB_URL=$(kubectl get ingress ev-charging-ingress -n ev-charging -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
           if [ ! -z "$LB_URL" ]; then
             kubectl create configmap web-app-config \
-              --from-literal=VITE_API_URL="http://${LB_URL}/api" \
+              --from-literal=VITE_BASE_URL="http://${LB_URL}/api" \
               --namespace=ev-charging \
               --dry-run=client -o yaml | kubectl apply -f -
             kubectl rollout restart deployment/web-app -n ev-charging

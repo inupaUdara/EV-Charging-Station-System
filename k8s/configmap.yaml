@@ -14,4 +14,4 @@ metadata:
   namespace: ev-charging
 data:
   # This will be updated after deployment with actual ALB URL
-  VITE_API_URL: "http://LOAD_BALANCER_URL/api"
+  VITE_BASE_URL: "http://LOAD_BALANCER_URL/api"
