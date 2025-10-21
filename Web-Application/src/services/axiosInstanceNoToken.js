@@ -1,7 +1,14 @@
 import axios from "axios";
 
+const getBaseURL = () => {
+  if (window.ENV && window.ENV.VITE_BASE_URL && window.ENV.VITE_BASE_URL !== '__VITE_BASE_URL__') {
+    return window.ENV.VITE_BASE_URL;
+  }
+  return import.meta.env.VITE_BASE_URL || 'http://localhost:5263/api';
+};
+
 const axiosInstanceNoToken = axios.create({
-  baseURL: import.meta.env.VITE_BASE_URL,
+  baseURL: getBaseURL(),
   headers: {
     "Content-Type": "application/json",
   },
