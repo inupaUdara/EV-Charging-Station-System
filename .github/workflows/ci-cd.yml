@@ -230,7 +230,8 @@ jobs:
           
           # Create secrets with actual values
           kubectl create secret generic webservice-secrets \
-            --from-literal=ConnectionStrings__MongoDB="$MONGODB_ATLAS_CONNECTION_STRING" \
+            --from-literal=MongoDB__ConnectionString="$MONGODB_ATLAS_CONNECTION_STRING" \
+            --from-literal=MongoDB__DatabaseName="evchargingdb" \
             --from-literal=Jwt__Key="$JWT_SECRET_KEY" \
             --from-literal=Jwt__Issuer="ev-charging-api" \
             --from-literal=Jwt__Audience="ev-charging-web" \
