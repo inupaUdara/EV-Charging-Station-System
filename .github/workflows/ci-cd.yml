@@ -302,8 +302,8 @@ jobs:
           fi
           
           # Test API health endpoint
-          echo "Testing API health at http://$LB_URL/api/health"
-          curl -f http://$LB_URL/api/health || echo "Health check not ready yet"
+          echo "Testing API health at http://$LB_URL/health"
+          curl -f http://$LB_URL/health || echo "Health check not ready yet"
           
           echo "Deployment successful!"
           echo "Application URL: http://$LB_URL"

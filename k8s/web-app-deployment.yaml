@@ -26,6 +26,25 @@ spec:
         runAsNonRoot: true
         runAsUser: 101
         fsGroup: 101
+      initContainers:
+      - name: config-init
+        image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/ev-charging-web-app:${IMAGE_TAG}
+        command: ['sh', '-c']
+        args:
+          - |
+            echo "Generating runtime config..."
+            cat /config-template/config.js.template | sed "s|__VITE_BASE_URL__|${VITE_BASE_URL}|g" > /config/config.js
+            echo "Config generated:"
+            cat /config/config.js
+        envFrom:
+        - configMapRef:
+            name: web-app-config
+        volumeMounts:
+        - name: config-volume
+          mountPath: /config
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
       containers:
       - name: web-app
         image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/ev-charging-web-app:${IMAGE_TAG}
@@ -42,6 +61,10 @@ spec:
           mountPath: /var/cache/nginx
         - name: nginx-run
           mountPath: /var/run
+        - name: config-volume
+          mountPath: /usr/share/nginx/html/config.js
+          subPath: config.js
+          readOnly: true
         resources:
           requests:
             memory: "128Mi"
@@ -76,6 +99,8 @@ spec:
       - name: nginx-cache
         emptyDir: {}
       - name: nginx-run
+        emptyDir: {}
+      - name: config-volume
         emptyDir: {}
 ---
 apiVersion: v1
