@@ -6,6 +6,12 @@ on:
   pull_request:
     branches: [main, develop]
 
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+  id-token: write
+
 env:
   AWS_REGION: us-east-1
   EKS_CLUSTER_NAME: ev-charging-cluster
