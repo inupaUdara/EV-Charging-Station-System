@@ -31,7 +31,7 @@ spec:
         image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com/ev-charging-web-app:${IMAGE_TAG}
         imagePullPolicy: Always
         ports:
-        - containerPort: 80
+        - containerPort: 8080
           name: http
           protocol: TCP
         envFrom:
@@ -51,16 +51,16 @@ spec:
             cpu: "200m"
         livenessProbe:
           httpGet:
-            path: /
-            port: 80
+            path: /health
+            port: 8080
           initialDelaySeconds: 10
           periodSeconds: 10
           timeoutSeconds: 3
           failureThreshold: 3
         readinessProbe:
           httpGet:
-            path: /
-            port: 80
+            path: /health
+            port: 8080
           initialDelaySeconds: 5
           periodSeconds: 5
           timeoutSeconds: 3
@@ -89,7 +89,7 @@ spec:
   type: ClusterIP
   ports:
   - port: 80
-    targetPort: 80
+    targetPort: 8080
     protocol: TCP
     name: http
   selector:
