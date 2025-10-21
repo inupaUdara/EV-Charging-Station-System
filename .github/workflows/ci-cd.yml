@@ -1,0 +1,278 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  AWS_REGION: us-east-1
+  EKS_CLUSTER_NAME: ev-charging-cluster
+
+jobs:
+  lint-and-test-web:
+    name: Lint & Test Web Application
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./Web-Application
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: Web-Application/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run ESLint
+        run: npm run lint
+
+      - name: Build application
+        run: npm run build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-app-build
+          path: Web-Application/dist
+          retention-days: 1
+
+  lint-and-test-api:
+    name: Lint & Test WebService
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./WebService
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Run tests
+        run: dotnet test --no-restore --verbosity normal
+
+  security-scan:
+    name: Security Scanning
+    runs-on: ubuntu-latest
+    needs: [lint-and-test-web, lint-and-test-api]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+
+      - name: Upload Trivy results to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  build-and-push-images:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: [security-scan]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
+    
+    strategy:
+      matrix:
+        service:
+          - name: webservice
+            context: ./WebService
+            dockerfile: ./WebService/Dockerfile
+          - name: web-app
+            context: ./Web-Application
+            dockerfile: ./Web-Application/Dockerfile
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ steps.login-ecr.outputs.registry }}/ev-charging-${{ matrix.service.name }}
+          tags: |
+            type=ref,event=branch
+            type=sha,prefix={{branch}}-
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: ${{ matrix.service.context }}
+          file: ${{ matrix.service.dockerfile }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Scan image with Trivy
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/ev-charging-${{ matrix.service.name }}:${{ github.sha }}
+          format: 'sarif'
+          output: 'trivy-image-results.sarif'
+
+      - name: Upload Trivy scan results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: 'trivy-image-results.sarif'
+
+  deploy-to-eks:
+    name: Deploy to EKS
+    runs-on: ubuntu-latest
+    needs: [build-and-push-images]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update kubeconfig
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Install kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+
+      - name: Deploy to Kubernetes
+        env:
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+          IMAGE_TAG: ${{ github.sha }}
+          MONGODB_ATLAS_CONNECTION_STRING: ${{ secrets.MONGODB_ATLAS_CONNECTION_STRING }}
+          JWT_SECRET_KEY: ${{ secrets.JWT_SECRET_KEY }}
+        run: |
+          # Replace placeholders in K8s manifests
+          find k8s/ -type f -name "*.yaml" -exec sed -i \
+            -e "s|\${AWS_ACCOUNT_ID}|$AWS_ACCOUNT_ID|g" \
+            -e "s|\${AWS_REGION}|$AWS_REGION|g" \
+            -e "s|\${IMAGE_TAG}|$IMAGE_TAG|g" {} +
+          
+          # Apply Kubernetes manifests
+          kubectl apply -f k8s/namespace.yaml
+          kubectl apply -f k8s/configmap.yaml
+          
+          # Create secrets with actual values
+          kubectl create secret generic webservice-secrets \
+            --from-literal=ConnectionStrings__MongoDB="$MONGODB_ATLAS_CONNECTION_STRING" \
+            --from-literal=JwtSettings__SecretKey="$JWT_SECRET_KEY" \
+            --from-literal=JwtSettings__Issuer="ev-charging-api" \
+            --from-literal=JwtSettings__Audience="ev-charging-web" \
+            --namespace=ev-charging \
+            --dry-run=client -o yaml | kubectl apply -f -
+          
+          kubectl apply -f k8s/webservice-deployment.yaml
+          kubectl apply -f k8s/web-app-deployment.yaml
+          kubectl apply -f k8s/ingress.yaml
+          
+          # Wait for rollout
+          kubectl rollout status deployment/webservice -n ev-charging --timeout=5m
+          kubectl rollout status deployment/web-app -n ev-charging --timeout=5m
+          
+          # Get and update ALB URL in configmap
+          echo "Waiting for load balancer..."
+          sleep 60
+          LB_URL=$(kubectl get ingress ev-charging-ingress -n ev-charging -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          if [ ! -z "$LB_URL" ]; then
+            kubectl create configmap web-app-config \
+              --from-literal=VITE_API_URL="http://${LB_URL}/api" \
+              --namespace=ev-charging \
+              --dry-run=client -o yaml | kubectl apply -f -
+            kubectl rollout restart deployment/web-app -n ev-charging
+          fi
+
+      - name: Verify deployment
+        run: |
+          kubectl get pods -n ev-charging
+          kubectl get svc -n ev-charging
+          kubectl get ingress -n ev-charging
+
+      - name: Run smoke tests
+        run: |
+          # Wait for load balancer to be ready
+          sleep 30
+          
+          # Get load balancer URL
+          LB_URL=$(kubectl get ingress ev-charging-ingress -n ev-charging -o jsonpath='{.status.loadBalancer.ingress[0].hostname}')
+          
+          if [ -z "$LB_URL" ]; then
+            echo "Warning: Load balancer URL not ready yet"
+            exit 0
+          fi
+          
+          # Test API health endpoint
+          echo "Testing API health at http://$LB_URL/api/health"
+          curl -f http://$LB_URL/api/health || echo "Health check not ready yet"
+          
+          echo "Deployment successful!"
+          echo "Application URL: http://$LB_URL"
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [deploy-to-eks]
+    if: always()
+    
+    steps:
+      - name: Send Slack notification
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          text: |
+            Deployment to EKS ${{ job.status }}
+            Commit: ${{ github.sha }}
+            Author: ${{ github.actor }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+        if: always()

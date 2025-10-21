@@ -1,0 +1,21 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: webservice-pdb
+  namespace: ev-charging
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: webservice
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: web-app-pdb
+  namespace: ev-charging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: web-app

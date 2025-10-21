@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: webservice-config
+  namespace: ev-charging
+data:
+  ASPNETCORE_ENVIRONMENT: "Production"
+  ASPNETCORE_URLS: "http://+:8080"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: web-app-config
+  namespace: ev-charging
+data:
+  # This will be updated after deployment with actual ALB URL
+  VITE_API_URL: "http://LOAD_BALANCER_URL/api"

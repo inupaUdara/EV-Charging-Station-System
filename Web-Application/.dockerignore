@@ -1,0 +1,17 @@
+# Ignore node_modules in Docker context
+node_modules
+npm-debug.log
+.env.local
+.env.*.local
+
+# Development files
+*.md
+.git
+.gitignore
+.eslintrc
+.prettierrc
+
+# Test files
+coverage
+*.test.js
+*.spec.js

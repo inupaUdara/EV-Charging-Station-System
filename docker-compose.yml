@@ -1,0 +1,119 @@
+version: '3.8'
+
+services:
+  # MongoDB Atlas is used for production
+  # This local MongoDB is for development only
+  mongodb:
+    image: mongo:6
+    container_name: ev-charging-mongodb
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: admin
+      MONGO_INITDB_ROOT_PASSWORD: password123
+      MONGO_INITDB_DATABASE: evcharging
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - ev-charging-network
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  webservice:
+    build:
+      context: ./WebService
+      dockerfile: Dockerfile
+    container_name: ev-charging-webservice
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__MongoDB: mongodb://admin:password123@mongodb:27017/evcharging?authSource=admin
+      JwtSettings__SecretKey: development-secret-key-change-in-production-min-32-chars
+      JwtSettings__Issuer: ev-charging-api
+      JwtSettings__Audience: ev-charging-web
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - ev-charging-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 10s
+
+  web-app:
+    build:
+      context: ./Web-Application
+      dockerfile: Dockerfile
+    container_name: ev-charging-web-app
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    environment:
+      VITE_API_URL: http://localhost:8080
+    depends_on:
+      - webservice
+    networks:
+      - ev-charging-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+
+  # Monitoring Stack
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: ev-charging-prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - ev-charging-network
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: ev-charging-grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin123
+      GF_INSTALL_PLUGINS: grafana-piechart-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana-dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana-datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml
+    depends_on:
+      - prometheus
+    networks:
+      - ev-charging-network
+
+volumes:
+  mongodb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  ev-charging-network:
+    driver: bridge
