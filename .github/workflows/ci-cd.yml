@@ -50,7 +50,7 @@ jobs:
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: ./WebService
+        working-directory: ./WebService/WebService
     
     steps:
       - name: Checkout code
